@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch } from "vue";
+import { onBeforeUnmount, onMounted, ref, watch } from "vue";
 import {
   defaultDraft,
   draftFromUnknown,
@@ -12,19 +12,43 @@ import EstimatorForm from "./EstimatorForm.vue";
 import { POLICIES } from "./policies.ts";
 
 const STORAGE_KEY = "pension-estimator.draft.v1";
-const now = shanghaiYearMonth();
+const now = ref(shanghaiYearMonth());
 
 function loadDraft(): Draft {
+  const current = now.value;
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    const stored = raw ? draftFromUnknown(JSON.parse(raw)) : null;
-    return syncDerived(stored ?? defaultDraft(now), now);
+    const stored = raw ? draftFromUnknown(JSON.parse(raw), current) : null;
+    return syncDerived(stored ?? defaultDraft(current), current);
   } catch {
-    return syncDerived(defaultDraft(now), now);
+    return syncDerived(defaultDraft(current), current);
   }
 }
 
 const draft = ref<Draft>(loadDraft());
+
+function refreshNow() {
+  const next = shanghaiYearMonth();
+  if (next === now.value) return;
+  now.value = next;
+  draft.value = syncDerived(draft.value, next);
+}
+
+function onVisible() {
+  if (document.visibilityState === "visible") refreshNow();
+}
+
+let clock = 0;
+
+onMounted(() => {
+  document.addEventListener("visibilitychange", onVisible);
+  clock = window.setInterval(refreshNow, 60_000);
+});
+
+onBeforeUnmount(() => {
+  document.removeEventListener("visibilitychange", onVisible);
+  window.clearInterval(clock);
+});
 
 watch(
   draft,

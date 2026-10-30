@@ -87,3 +87,7 @@ export function roundingNote(name: string, roundUpToJiao: boolean): string {
     ? `${name}的基础养老金和个人账户养老金按角进位，每月合计再保留到分。`
     : `${name}的金额保留到分。`;
 }
+
+export function pastIndexNote(): string {
+  return "1 表示以前按当地平均缴费基数缴。高于 1 是高于平均，低于 1 是低于平均。要改，打开下面的利率和已缴费指数。";
+}

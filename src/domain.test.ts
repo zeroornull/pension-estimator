@@ -2,8 +2,14 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   defaultDraft,
+  draftFromUnknown,
   estimate,
+  isCityId,
+  minimumContributionYears,
+  parseYearMonth,
+  payoutMonthsForAge,
   statutoryPlan,
+  syncDerived,
   tryEstimate,
   yearMonth,
   type CityId,
@@ -149,3 +155,64 @@ function sample(now: YearMonth, cityId: CityId, breakMonths: number): EstimateIn
     futurePay: { mode: "base", monthlyBase: 8000 },
   };
 }
+
+test("female statutory retirement follows the delay anchors", () => {
+  const earlier55 = statutoryPlan("female55", ym(1969, 12));
+  assert.equal(earlier55.delayMonths, 0);
+  assert.equal(earlier55.retirementMonth, "2024-12");
+  assert.equal(earlier55.payoutMonths, 170);
+
+  const first55 = statutoryPlan("female55", ym(1970, 1));
+  assert.equal(first55.delayMonths, 1);
+  assert.equal(first55.retirementMonth, "2025-02");
+
+  const earlier50 = statutoryPlan("female50", ym(1974, 12));
+  assert.equal(earlier50.delayMonths, 0);
+  assert.equal(earlier50.retirementMonth, "2024-12");
+
+  const first50 = statutoryPlan("female50", ym(1975, 1));
+  assert.equal(first50.delayMonths, 1);
+  assert.equal(first50.retirementMonth, "2025-02");
+});
+
+test("payout months interpolate leftover months and minimum years rise after 2029", () => {
+  assert.equal(payoutMonthsForAge(55 * 12 + 6), 167);
+  assert.equal(minimumContributionYears(2029), 15);
+  assert.equal(minimumContributionYears(2030), 15.5);
+  assert.equal(minimumContributionYears(2040), 20);
+});
+
+test("an out of range balance stops the estimate", () => {
+  const now = ym(2026, 10);
+  const outcome = tryEstimate({ ...defaultDraft(now), accountBalance: "-1" }, now);
+  assert.equal(outcome.ok, false);
+  if (outcome.ok) return;
+  assert.match(outcome.errors.accountBalance ?? "", /0 到 10 亿/);
+});
+
+test("linked future months follow a later now and a hand-edited count stays", () => {
+  const now = ym(2026, 10);
+  const draft = defaultDraft(now);
+  const later = syncDerived(draft, ym(2026, 11));
+  assert.equal(later.retirementMonth, draft.retirementMonth);
+  assert.equal(later.futureMonths, "275");
+  const manual = syncDerived({ ...draft, futureMonthsLinked: false, futureMonths: "10" }, ym(2026, 11));
+  assert.equal(manual.futureMonths, "10");
+});
+
+test("a saved draft keeps its fields when one new field is missing", () => {
+  const now = ym(2026, 10);
+  const saved = defaultDraft(now);
+  const withoutPastIndex: Record<string, unknown> = { ...saved };
+  delete withoutPastIndex.pastIndex;
+  const merged = draftFromUnknown(withoutPastIndex, now);
+  assert.ok(merged);
+  assert.equal(merged.pastIndex, "1");
+  assert.equal(merged.accountBalance, "80000");
+  assert.equal(merged.birthMonth, saved.birthMonth);
+  assert.equal(draftFromUnknown({ ...saved, cityId: "atlantis" }, now), null);
+  assert.equal(parseYearMonth("2049-13"), null);
+  assert.equal(isCityId("shenzhen"), true);
+  assert.equal(isCityId("atlantis"), false);
+});
+

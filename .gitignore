@@ -1,6 +1,8 @@
 node_modules
 dist
 .cloudflare
+.cursor/skills/verify-pension-estimator/run/
+.cursor/skills/verify-pension-estimator/evidence/
 
 # wrangler files
 .wrangler

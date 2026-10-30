@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import { CITY_BY_ID, tryEstimate, type Draft, type YearMonth } from "./domain.ts";
+import { CITY_BY_ID, tryEstimate, parseYearMonth, type Draft, type YearMonth } from "./domain.ts";
 import { formulaLines, roundingNote, spanNote, yearsText, yuan } from "./present.ts";
 
 const props = defineProps<{
@@ -35,9 +35,9 @@ const shares = computed(() => {
 });
 
 const startLabel = computed(() => {
-  const match = /^(\d{4})-(\d{2})$/.exec(props.draft.retirementMonth);
-  if (!match) return "尚未确定";
-  const when = `${Number(match[1])}年${Number(match[2])}月`;
+  const parsed = parseYearMonth(props.draft.retirementMonth);
+  if (!parsed) return "尚未确定";
+  const when = `${Number(parsed.slice(0, 4))}年${Number(parsed.slice(5, 7))}月`;
   return props.draft.retirementMode === "statutory" ? `${when}，按法定年龄` : `${when}，手填`;
 });
 </script>
@@ -46,7 +46,7 @@ const startLabel = computed(() => {
   <section class="result">
     <div class="result-summary">
       <h2 id="result-title">每月基本养老金</h2>
-      <p v-if="!outcome.ok" class="pause">有输入超出范围，结果先停着。改掉红字后会重新计算。</p>
+      <p v-if="!outcome.ok" class="pause" role="status">有输入超出范围，结果先停着。改掉红字后会重新计算。</p>
       <template v-else>
         <p class="lead num" aria-live="polite">
           <span>{{ yuan(outcome.result.monthly, digits) }}</span>

@@ -1,5 +1,10 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
+import { computed, nextTick, ref, watch } from "vue";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { parseYearMonth, shanghaiYearMonth } from "./domain.ts";
 import { openMonth } from "./month-session.ts";
 
 const props = defineProps<{
@@ -12,12 +17,14 @@ const emit = defineEmits<{
   "update:modelValue": [value: string];
 }>();
 
-const root = ref<HTMLElement | null>(null);
 const open = ref(false);
-const viewYear = ref(1986);
+const viewYear = ref(0);
+const yearText = ref("");
 const focusMonth = ref(1);
+const minYear = 1900;
+const maxYear = 2200;
 
-const parsed = computed(() => parseYearMonth(props.modelValue));
+const parsed = computed(() => parts(props.modelValue));
 const buttonText = computed(() => {
   const value = parsed.value;
   return value ? `${value.year}年${value.month}月` : "选择年月";
@@ -25,41 +32,27 @@ const buttonText = computed(() => {
 
 watch(open, (isOpen) => {
   if (!isOpen) return;
-  const value = parsed.value;
-  if (value) {
-    viewYear.value = value.year;
-    focusMonth.value = value.month;
-  }
-  document.addEventListener("pointerdown", onPointerDown);
+  openMonth.value = props.label;
+  const value = parsed.value ?? parts(shanghaiYearMonth());
+  if (!value) return;
+  applyYear(value.year);
+  focusMonth.value = value.month;
   nextTick(() => document.getElementById(monthId(focusMonth.value))?.focus());
 });
 
-watch(open, (isOpen) => {
-  if (!isOpen) document.removeEventListener("pointerdown", onPointerDown);
+watch(openMonth, (label) => {
+  if (label !== props.label) open.value = false;
 });
 
-onBeforeUnmount(() => document.removeEventListener("pointerdown", onPointerDown));
-
-function parseYearMonth(value: string): { year: number; month: number } | null {
-  const match = /^(\d{4})-(\d{2})$/.exec(value);
-  if (!match) return null;
-  const month = Number(match[2]);
-  if (month < 1 || month > 12) return null;
-  return { year: Number(match[1]), month };
+function parts(value: string): { year: number; month: number } | null {
+  const parsedValue = parseYearMonth(value);
+  if (!parsedValue) return null;
+  return { year: Number(parsedValue.slice(0, 4)), month: Number(parsedValue.slice(5, 7)) };
 }
 
 function monthId(month: number): string {
   return `${props.label}-month-${month}`;
 }
-
-function toggle() {
-  open.value = !open.value;
-  if (open.value) openMonth.value = props.label;
-}
-
-watch(openMonth, (label) => {
-  if (label !== props.label) open.value = false;
-});
 
 function close() {
   open.value = false;
@@ -71,14 +64,26 @@ function choose(month: number) {
   close();
 }
 
-function shiftYear(delta: number) {
-  viewYear.value += delta;
+function applyYear(year: number) {
+  viewYear.value = year;
+  yearText.value = String(year);
 }
 
-function onPointerDown(event: PointerEvent) {
-  const current = root.value;
-  if (!current || !(event.target instanceof Node) || current.contains(event.target)) return;
-  open.value = false;
+function shiftYear(delta: number) {
+  applyYear(viewYear.value + delta);
+}
+
+function onYearInput(value: string | number) {
+  yearText.value = String(value).replace(/\D/g, "").slice(0, 4);
+  if (yearText.value.length !== 4) return;
+  const year = Number(yearText.value);
+  if (year >= minYear && year <= maxYear) viewYear.value = year;
+}
+
+function commitYear() {
+  const year = Number(yearText.value);
+  if (yearText.value.length === 4 && year >= minYear && year <= maxYear) applyYear(year);
+  else yearText.value = String(viewYear.value);
 }
 
 function onMonthKey(event: KeyboardEvent, month: number) {
@@ -94,53 +99,59 @@ function onMonthKey(event: KeyboardEvent, month: number) {
   focusMonth.value = ((month - 1 + delta + 12) % 12) + 1;
   nextTick(() => document.getElementById(monthId(focusMonth.value))?.focus());
 }
-
-function onRootKey(event: KeyboardEvent) {
-  if (event.key === "Escape" && open.value) {
-    event.preventDefault();
-    close();
-  }
-}
 </script>
 
 <template>
-  <div ref="root" class="month-field field" @keydown="onRootKey">
-    <label :for="label">{{ label }}</label>
-    <button
-      :id="label"
-      type="button"
-      class="month-trigger"
-      :aria-invalid="error ? 'true' : 'false'"
-      aria-haspopup="dialog"
-      :aria-expanded="open"
-      @click="toggle"
-    >
-      {{ buttonText }}
-    </button>
-    <p v-if="error" class="error">{{ error }}</p>
-    <div v-if="open" class="month-panel" role="dialog" :aria-label="label">
-      <div class="month-year">
-        <button type="button" class="month-step" aria-label="上一年" @click="shiftYear(-1)">上年</button>
-        <span class="month-year-value">{{ viewYear }}</span>
-        <button type="button" class="month-step" aria-label="下一年" @click="shiftYear(1)">下年</button>
-      </div>
-      <div class="month-grid" role="grid">
-        <button
-          v-for="month in 12"
-          :id="monthId(month)"
-          :key="month"
+  <div class="month-field field">
+    <Label :for="label">{{ label }}</Label>
+    <Popover v-model:open="open">
+      <PopoverTrigger as-child>
+        <Button
+          :id="label"
           type="button"
-          class="month-cell"
-          role="gridcell"
-          :tabindex="month === focusMonth ? 0 : -1"
-          :aria-selected="parsed?.year === viewYear && parsed?.month === month"
-          :class="{ 'is-selected': parsed?.year === viewYear && parsed?.month === month }"
-          @click="choose(month)"
-          @keydown="onMonthKey($event, month)"
+          variant="outline"
+          class="month-trigger"
+          :aria-invalid="error ? 'true' : 'false'"
+          aria-haspopup="dialog"
         >
-          {{ month }}月
-        </button>
-      </div>
-    </div>
+          {{ buttonText }}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent class="month-sheet" align="start" :aria-label="label">
+        <div class="month-year">
+          <Button type="button" variant="outline" class="month-step" aria-label="上一年" @click="shiftYear(-1)">上年</Button>
+          <Input
+            class="month-year-value"
+            inputmode="numeric"
+            aria-label="年份"
+            autocomplete="off"
+            :model-value="yearText"
+            @update:model-value="onYearInput"
+            @blur="commitYear"
+            @keydown.enter.prevent="commitYear"
+          />
+          <Button type="button" variant="outline" class="month-step" aria-label="下一年" @click="shiftYear(1)">下年</Button>
+        </div>
+        <div class="month-grid" role="grid">
+          <Button
+            v-for="month in 12"
+            :id="monthId(month)"
+            :key="month"
+            type="button"
+            variant="outline"
+            class="month-cell"
+            role="gridcell"
+            :tabindex="month === focusMonth ? 0 : -1"
+            :aria-selected="parsed?.year === viewYear && parsed?.month === month"
+            :class="{ 'is-selected': parsed?.year === viewYear && parsed?.month === month }"
+            @click="choose(month)"
+            @keydown="onMonthKey($event, month)"
+          >
+            {{ month }}月
+          </Button>
+        </div>
+      </PopoverContent>
+    </Popover>
+    <p v-if="error" class="error">{{ error }}</p>
   </div>
 </template>

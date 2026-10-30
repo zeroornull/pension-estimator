@@ -464,7 +464,7 @@ export function tryEstimate(
   return { ok: true, input, result: estimate(input, now) };
 }
 
-export function draftFromUnknown(value: unknown): Draft | null {
+export function draftFromUnknown(value: unknown, now: YearMonth): Draft | null {
   if (!isRecord(value)) return null;
   const cityId = value.cityId;
   const workerType = value.workerType;
@@ -474,74 +474,39 @@ export function draftFromUnknown(value: unknown): Draft | null {
   if (workerType !== "male" && workerType !== "female55" && workerType !== "female50") return null;
   if (futureMode !== "base" && futureMode !== "ratio") return null;
   if (retirementMode !== "statutory" && retirementMode !== "manual") return null;
-  const text = (key: string) => (typeof value[key] === "string" ? value[key] : null);
-  const flag = (key: string) => (typeof value[key] === "boolean" ? value[key] : null);
-  const accountBalance = text("accountBalance");
-  const paidMonths = text("paidMonths");
-  const totalYears = text("totalYears");
-  const totalYearsLinked = flag("totalYearsLinked");
-  const baseAmount = text("baseAmount");
-  const ratioPct = text("ratioPct");
-  const futureMonths = text("futureMonths");
-  const futureMonthsLinked = flag("futureMonthsLinked");
-  const currentAge = text("currentAge");
-  const birthMonth = text("birthMonth");
-  const retirementMonth = text("retirementMonth");
-  const payoutMonths = text("payoutMonths");
-  const payoutLinked = flag("payoutLinked");
-  const contributionReference = text("contributionReference");
-  const pensionBase = text("pensionBase");
-  const interestRate = text("interestRate");
-  const inflationRate = text("inflationRate");
-  const pastIndex = text("pastIndex");
-  const beijingBreakMonths = text("beijingBreakMonths");
-  if (
-    accountBalance === null ||
-    paidMonths === null ||
-    totalYears === null ||
-    totalYearsLinked === null ||
-    baseAmount === null ||
-    ratioPct === null ||
-    futureMonths === null ||
-    futureMonthsLinked === null ||
-    currentAge === null ||
-    birthMonth === null ||
-    retirementMonth === null ||
-    payoutMonths === null ||
-    payoutLinked === null ||
-    contributionReference === null ||
-    pensionBase === null ||
-    interestRate === null ||
-    inflationRate === null ||
-    pastIndex === null ||
-    beijingBreakMonths === null
-  ) {
-    return null;
-  }
+  const fallback = defaultDraft(now, cityId);
+  const text = (key: keyof Draft): string => {
+    const raw = value[key];
+    return typeof raw === "string" ? raw : String(fallback[key]);
+  };
+  const flag = (key: "totalYearsLinked" | "futureMonthsLinked" | "payoutLinked"): boolean => {
+    const raw = value[key];
+    return typeof raw === "boolean" ? raw : fallback[key];
+  };
   return {
     cityId,
-    accountBalance,
-    paidMonths,
-    totalYears,
-    totalYearsLinked,
+    accountBalance: text("accountBalance"),
+    paidMonths: text("paidMonths"),
+    totalYears: text("totalYears"),
+    totalYearsLinked: flag("totalYearsLinked"),
     futureMode,
-    baseAmount,
-    ratioPct,
-    futureMonths,
-    futureMonthsLinked,
-    currentAge,
-    birthMonth,
+    baseAmount: text("baseAmount"),
+    ratioPct: text("ratioPct"),
+    futureMonths: text("futureMonths"),
+    futureMonthsLinked: flag("futureMonthsLinked"),
+    currentAge: text("currentAge"),
+    birthMonth: text("birthMonth"),
     workerType,
     retirementMode,
-    retirementMonth,
-    payoutMonths,
-    payoutLinked,
-    contributionReference,
-    pensionBase,
-    interestRate,
-    inflationRate,
-    pastIndex,
-    beijingBreakMonths,
+    retirementMonth: text("retirementMonth"),
+    payoutMonths: text("payoutMonths"),
+    payoutLinked: flag("payoutLinked"),
+    contributionReference: text("contributionReference"),
+    pensionBase: text("pensionBase"),
+    interestRate: text("interestRate"),
+    inflationRate: text("inflationRate"),
+    pastIndex: text("pastIndex"),
+    beijingBreakMonths: text("beijingBreakMonths"),
   };
 }
 
@@ -706,6 +671,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function isCityId(value: string): value is CityId {
+export function isCityId(value: string): value is CityId {
   return Object.prototype.hasOwnProperty.call(CITY_BY_ID, value);
 }

@@ -1,13 +1,16 @@
 <script setup lang="ts">
 import { computed, defineComponent, h, nextTick, onBeforeUnmount, ref, watch } from "vue";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   applyCityBenchmarks,
   CITY_BY_ID,
   CITIES,
   defaultDraft,
+  isCityId,
   syncDerived,
   tryEstimate,
-  type CityId,
   type Draft,
   type DraftField,
   type FieldErrors,
@@ -15,7 +18,7 @@ import {
 } from "./domain.ts";
 import { ageToBirth, birthToAge } from "./draft-edit.ts";
 import MonthField from "./MonthField.vue";
-import { benchmarkNote, delayNote, yuan } from "./present.ts";
+import { benchmarkNote, delayNote, pastIndexNote, yuan } from "./present.ts";
 
 const props = defineProps<{ now: YearMonth }>();
 const draft = defineModel<Draft>({ required: true });
@@ -171,10 +174,6 @@ function onDetailsToggle(event: Event, target: "benchmarks" | "assumptions") {
   else assumptionsOpen.value = node.open;
 }
 
-function isCityId(value: string): value is CityId {
-  return Object.prototype.hasOwnProperty.call(CITY_BY_ID, value);
-}
-
 const Field = defineComponent({
   props: {
     label: { type: String, required: true },
@@ -184,29 +183,26 @@ const Field = defineComponent({
     mode: { type: String, default: "decimal" },
   },
   emits: ["update:modelValue"],
-  setup(props, { emit }) {
-    return () =>
-      h("div", { class: "field" }, [
-        h("label", { for: props.label }, props.label),
-        h("div", { class: "control" }, [
-          h("input", {
-            id: props.label,
-            type: "text",
-            inputmode: props.mode,
-            autocomplete: "off",
-            spellcheck: "false",
-            value: props.modelValue,
-            "aria-invalid": props.error ? "true" : "false",
-            onInput: (event: Event) => {
-              const target = event.target;
-              if (target instanceof HTMLInputElement) emit("update:modelValue", target.value);
-            },
-          }),
-          props.suffix ? h("span", { class: "suffix" }, props.suffix) : null,
-        ]),
-        props.error ? h("p", { class: "error" }, props.error) : null,
-      ]);
-  },
+    setup(props, { emit }) {
+      return () =>
+        h("div", { class: "field" }, [
+          h(Label, { for: props.label }, () => props.label),
+          h("div", { class: "control" }, [
+            h(Input, {
+              id: props.label,
+              type: "text",
+              inputmode: props.mode,
+              autocomplete: "off",
+              spellcheck: "false",
+              modelValue: props.modelValue,
+              "aria-invalid": props.error ? "true" : "false",
+              "onUpdate:modelValue": (value: string | number) => emit("update:modelValue", String(value)),
+            }),
+            props.suffix ? h("span", { class: "suffix" }, props.suffix) : null,
+          ]),
+          props.error ? h("p", { class: "error" }, props.error) : null,
+        ]);
+    },
 });
 
 </script>
@@ -225,6 +221,7 @@ const Field = defineComponent({
             aria-autocomplete="list"
             aria-controls="city-list"
             :aria-expanded="cityOpen"
+            :aria-activedescendant="cityOpen && cityMatches[cityActive] ? `city-option-${cityMatches[cityActive].id}` : undefined"
             :value="cityOpen ? cityQuery : city.name"
             autocomplete="off"
             spellcheck="false"
@@ -237,6 +234,7 @@ const Field = defineComponent({
             <li
               v-for="(item, index) in cityMatches"
               :key="item.id"
+              :id="`city-option-${item.id}`"
               role="option"
               :aria-selected="item.id === draft.cityId"
               :class="{ 'is-active': index === cityActive, 'is-selected': item.id === draft.cityId }"
@@ -289,7 +287,7 @@ const Field = defineComponent({
         <Field label="计发月数" suffix="个月" :model-value="draft.payoutMonths" :error="errors.payoutMonths" @update:model-value="edit('payoutMonths', $event)" />
       </div>
       <p v-if="!draft.payoutLinked" class="hint">整数年龄查表。不满整岁就在相邻两档之间按月折算，保留 1 位小数。</p>
-      <button v-if="!draft.payoutLinked" type="button" class="quiet" @click="relink('payoutLinked')">改回年龄表上的月数</button>
+      <Button v-if="!draft.payoutLinked" type="button" variant="ghost" class="quiet" @click="relink('payoutLinked')">改回年龄表上的月数</Button>
     </fieldset>
 
     <fieldset>
@@ -315,12 +313,13 @@ const Field = defineComponent({
       </div>
       <Field label="以后还要缴" suffix="个月" mode="numeric" :model-value="draft.futureMonths" :error="errors.futureMonths" @update:model-value="edit('futureMonths', $event)" />
       <p v-if="!draft.futureMonthsLinked" class="hint">这是手填的月数。</p>
-      <button v-if="!draft.futureMonthsLinked" type="button" class="quiet" @click="relink('futureMonthsLinked')">改回距退休的月数</button>
+      <Button v-if="!draft.futureMonthsLinked" type="button" variant="ghost" class="quiet" @click="relink('futureMonthsLinked')">改回距退休的月数</Button>
       <Field label="缴费年限" suffix="年" :model-value="draft.totalYears" :error="errors.totalYears" @update:model-value="edit('totalYears', $event)" />
       <p v-if="!draft.totalYearsLinked" class="hint">这是手填的年限。和月数对不上时仍会计算，并在结果里提醒。</p>
-      <button v-if="!draft.totalYearsLinked" type="button" class="quiet" @click="relink('totalYearsLinked')">改回按月数合计</button>
+      <Button v-if="!draft.totalYearsLinked" type="button" variant="ghost" class="quiet" @click="relink('totalYearsLinked')">改回按月数合计</Button>
     </fieldset>
 
+    <p class="hint">{{ pastIndexNote() }}</p>
     <details class="fold" :open="assumptionsOpen" @toggle="onDetailsToggle($event, 'assumptions')">
       <summary>利率和已缴费指数</summary>
       <div class="pair">
@@ -332,7 +331,7 @@ const Field = defineComponent({
     </details>
 
     <div class="actions">
-      <button type="button" class="quiet" @click="reset">恢复这个城市的示例</button>
+      <Button type="button" variant="ghost" class="quiet" @click="reset">恢复这个城市的示例</Button>
     </div>
   </form>
 </template>
